@@ -8,6 +8,8 @@ from transformers import get_scheduler
 from transformers import AutoModelForSequenceClassification
 import argparse
 import subprocess
+from matplotlib import pyplot as plt
+import numpy as np
 
 
 def print_gpu_memory():
@@ -78,7 +80,7 @@ class BoolQADataset(torch.utils.data.Dataset):
 def evaluate_model(model, dataloader, device):
     """ Evaluate a PyTorch Model
     :param torch.nn.Module model: the model to be evaluated
-    :param torch.utils.data.DataLoader test_dataloader: DataLoader containing testing examples
+    :param torch.utils.data.DataLoader dataloader: DataLoader containing testing examples
     :param torch.device device: the device that we'll be training on
     :return accuracy
     """
@@ -128,6 +130,8 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, device, 
 
     loss = torch.nn.CrossEntropyLoss()
 
+    train_accuracy_log, val_accuracy_log = [], []
+
     for epoch in range(num_epochs):
 
         # put the model in training mode (important that this is done each epoch,
@@ -154,14 +158,18 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, device, 
             Then, compute the accuracy using the logits and the labels.
             """
 
-            input_ids = ...
-            attention_mask = ...
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
 
-            output = mymodel(...)
-            predictions = ...
-            model_loss = loss(...)
+            output = mymodel(input_ids, attention_mask=attention_mask, labels=labels)
+            predictions = output.logits
+            model_loss = loss(predictions, labels)
 
-            ...
+            model_loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
 
             predictions = torch.argmax(predictions, dim=1)
 
@@ -170,11 +178,25 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, device, 
 
         # print evaluation metrics
         print(f" ===> Epoch {epoch + 1}")
+        # train_acc = train_accuracy.compute()
         print(f" - Average training metrics: accuracy={train_accuracy.compute()}")
+        # print(f" - Average training metrics: accuracy={train_acc}")
+
 
         # normally, validation would be more useful when training for many epochs
         val_accuracy = evaluate_model(mymodel, validation_dataloader, device)
         print(f" - Average validation metrics: accuracy={val_accuracy}")
+
+        # train_accuracy_log.append(train_acc['accuracy'])
+        # val_accuracy_log.append(val_accuracy['accuracy'])
+
+    # plt.clf()
+    # plt.plot(np.arange(1, num_epochs+1).astype(np.int32), train_accuracy_log, label='train')
+    # plt.plot(np.arange(1, num_epochs+1).astype(np.int32), val_accuracy_log, label='val')
+    # _ = plt.legend()
+    # plt.xlabel("number of epochs")
+    # plt.ylabel("accuracy")
+    # plt.savefig('1e-4-E5.png')
 
 
 def pre_process(model_name, batch_size, device, small_subset):
@@ -266,15 +288,14 @@ if __name__ == "__main__":
                                                                                              args.batch_size,
                                                                                              args.device,
                                                                                              args.small_subset)
-
     print(" >>>>>>>>  Starting training ... ")
-    train(...)
+    train(pretrained_model, args.num_epochs, train_dataloader, validation_dataloader, args.device, args.lr)
 
     # print the GPU memory usage just to make sure things are alright
     print_gpu_memory()
 
-    val_accuracy = ...
+    val_accuracy = evaluate_model(pretrained_model, validation_dataloader, args.device)
     print(f" - Average DEV metrics: accuracy={val_accuracy}")
 
-    test_accuracy = ...
+    test_accuracy = evaluate_model(pretrained_model, test_dataloader, args.device)
     print(f" - Average TEST metrics: accuracy={test_accuracy}")
